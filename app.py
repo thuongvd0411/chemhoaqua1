@@ -216,295 +216,308 @@ class GameVideoProcessor(VideoProcessorBase):
              _shared_state.game = self.game
 
     def recv(self, frame: av.VideoFrame) -> av.VideoFrame:
-        image = frame.to_ndarray(format="bgr24")
-        
-        # Ensure correct resolution
-        image = cv2.resize(image, (GAME_WIDTH, GAME_HEIGHT))
-        image = cv2.flip(image, 1)
-        
-        # --- Advanced Preprocessing (CLAHE) ---
-        # 1. Sharpening (Keep this, it's cheap)
-        kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
-        # image = cv2.filter2D(image, -1, kernel) # Optional: Can over-sharpen noise
-        
-        # 2. CLAHE (Contrast Limited Adaptive Histogram Equalization)
-        # Convert to LAB to operate on Lightness channel
-        lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-        
-        # Apply CLAHE to L-channel
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        cl = clahe.apply(l)
-        
-        # Merge and convert back
-        limg = cv2.merge((cl,a,b))
-        enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
-        
-        # Use 'enhanced' for AI detection, 'image' for display (or enhanced if we want user to see it)
-        # Let's use enhanced for AI, and raw for display to avoid looking "processed"
-        # BUT, if we draw trails on raw image, they match.
-        
-        if self.game is None:
-            self.set_game_mode("FRUIT")
+        try:
+            image = frame.to_ndarray(format="bgr24")
+            
+            # Ensure correct resolution
+            image = cv2.resize(image, (GAME_WIDTH, GAME_HEIGHT))
+            image = cv2.flip(image, 1)
+            
+            # --- Advanced Preprocessing (CLAHE) ---
+            # 1. Sharpening (Keep this, it's cheap)
+            kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+            # image = cv2.filter2D(image, -1, kernel) # Optional: Can over-sharpen noise
+            
+            # 2. CLAHE (Contrast Limited Adaptive Histogram Equalization)
+            # Convert to LAB to operate on Lightness channel
+            lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            
+            # Apply CLAHE to L-channel
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+            cl = clahe.apply(l)
+            
+            # Merge and convert back
+            limg = cv2.merge((cl,a,b))
+            enhanced = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+            
+            # Use 'enhanced' for AI detection, 'image' for display (or enhanced if we want user to see it)
+            # Let's use enhanced for AI, and raw for display to avoid looking "processed"
+            # BUT, if we draw trails on raw image, they match.
+            
+            if self.game is None:
+                self.set_game_mode("FRUIT")
 
-        # 1. AI Processing 
-        detected_coords = [] # List of (x, y)
-        
-        # Always run AI even in Game Over for interaction (Restart button)
-        # Use enhanced image for detection
-        rgb = cv2.cvtColor(enhanced, cv2.COLOR_BGR2RGB)
-        
-        if "FRUIT" in self.mode:
-            res = self.hands.process(rgb)
-            if res.multi_hand_landmarks:
-                h, w, _ = image.shape
-                for lm in res.multi_hand_landmarks:
-                    point = lm.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
-                    cx, cy = int(point.x * w), int(point.y * h)
-                    detected_coords.append((cx, cy))
-        else:
-            res = self.pose.process(rgb)
-            if res.pose_landmarks:
-                h, w, _ = image.shape
-                lm = res.pose_landmarks.landmark
-                lw = lm[mp_pose.PoseLandmark.LEFT_WRIST]
-                rw = lm[mp_pose.PoseLandmark.RIGHT_WRIST]
-                detected_coords.append((int(lw.x * w), int(lw.y * h)))
-                detected_coords.append((int(rw.x * w), int(rw.y * h)))
-
-        # Robust Tracking Matching (Greedy Euclidean to Predicted Pos)
-        # Match detected points to existing trackers
-        
-        # 1. Get Predicted Positions for matching reference
-        # We don't update trackers yet, just want to know where they *should* be.
-        tracker_preds = []
-        for t in self.trackers:
-            if t.last_valid_pos is not None:
-                # Simple linear pred for matching
-                pred_x = t.last_valid_pos[0] + t.velocity[0]
-                pred_y = t.last_valid_pos[1] + t.velocity[1]
-                tracker_preds.append((pred_x, pred_y))
+            # 1. AI Processing 
+            detected_coords = [] # List of (x, y)
+            
+            # Always run AI even in Game Over for interaction (Restart button)
+            # Use enhanced image for detection
+            rgb = cv2.cvtColor(enhanced, cv2.COLOR_BGR2RGB)
+            
+            if "FRUIT" in self.mode:
+                res = self.hands.process(rgb)
+                if res.multi_hand_landmarks:
+                    h, w, _ = image.shape
+                    for lm in res.multi_hand_landmarks:
+                        point = lm.landmark[mp_hands.HandLandmark.INDEX_FINGER_TIP]
+                        cx, cy = int(point.x * w), int(point.y * h)
+                        detected_coords.append((cx, cy))
             else:
-                tracker_preds.append(None)
+                res = self.pose.process(rgb)
+                if res.pose_landmarks:
+                    h, w, _ = image.shape
+                    lm = res.pose_landmarks.landmark
+                    lw = lm[mp_pose.PoseLandmark.LEFT_WRIST]
+                    rw = lm[mp_pose.PoseLandmark.RIGHT_WRIST]
+                    detected_coords.append((int(lw.x * w), int(lw.y * h)))
+                    detected_coords.append((int(rw.x * w), int(rw.y * h)))
 
-        # 2. Match
-        assigned_trackers = set()
-        matches = [] # (dist, p_idx, t_idx)
-        
-        for p_idx, (px, py) in enumerate(detected_coords):
-            for t_idx, t_pred in enumerate(tracker_preds):
+            # Robust Tracking Matching (Greedy Euclidean to Predicted Pos)
+            # Match detected points to existing trackers
+            
+            # 1. Get Predicted Positions for matching reference
+            # We don't update trackers yet, just want to know where they *should* be.
+            tracker_preds = []
+            for t in self.trackers:
+                if t.last_valid_pos is not None:
+                    # Simple linear pred for matching
+                    pred_x = t.last_valid_pos[0] + t.velocity[0]
+                    pred_y = t.last_valid_pos[1] + t.velocity[1]
+                    tracker_preds.append((pred_x, pred_y))
+                else:
+                    tracker_preds.append(None)
+
+            # 2. Match
+            assigned_trackers = set()
+            matches = [] # (dist, p_idx, t_idx)
+            
+            for p_idx, (px, py) in enumerate(detected_coords):
+                for t_idx, t_pred in enumerate(tracker_preds):
+                    if t_idx in assigned_trackers: continue
+                    
+                    if t_pred is not None:
+                        dist = np.hypot(px - t_pred[0], py - t_pred[1])
+                        matches.append((dist, p_idx, t_idx))
+                    else:
+                        # Tracker is empty/reset. 
+                        # Assign if it's free. Prioritize strict matches first.
+                        matches.append((9999, p_idx, t_idx))
+
+            matches.sort(key=lambda x: x[0])
+            
+            used_points = set()
+            tracker_updates = {} # t_idx -> pos
+            
+            for dist, p_idx, t_idx in matches:
+                if p_idx in used_points: continue
                 if t_idx in assigned_trackers: continue
                 
-                if t_pred is not None:
-                    dist = np.hypot(px - t_pred[0], py - t_pred[1])
-                    matches.append((dist, p_idx, t_idx))
+                # Stricter Threshold: 300px (Increased from 150 for fast movement)
+                # If > 300px, it's likely a swap or new hand, don't snap old tracker.
+                if dist < 300: 
+                    tracker_updates[t_idx] = detected_coords[p_idx]
+                    used_points.add(p_idx)
+                    assigned_trackers.add(t_idx)
+
+            # Assign remaining points to empty trackers
+            for p_idx in range(len(detected_coords)):
+                if p_idx not in used_points:
+                    # Find a free tracker
+                    for t_idx, t in enumerate(self.trackers):
+                        if t_idx not in assigned_trackers and t.last_valid_pos is None:
+                            tracker_updates[t_idx] = detected_coords[p_idx]
+                            assigned_trackers.add(t_idx)
+                            used_points.add(p_idx)
+                            break
+
+            # Apply updates
+            for t_idx, t in enumerate(self.trackers):
+                if t_idx in tracker_updates:
+                    t.update(tracker_updates[t_idx])
                 else:
-                    # Tracker is empty/reset. 
-                    # Assign if it's free. Prioritize strict matches first.
-                    matches.append((9999, p_idx, t_idx))
+                    t.update(None) # Predict or Clear
 
-        matches.sort(key=lambda x: x[0])
-        
-        used_points = set()
-        tracker_updates = {} # t_idx -> pos
-        
-        for dist, p_idx, t_idx in matches:
-            if p_idx in used_points: continue
-            if t_idx in assigned_trackers: continue
-            
-            # Stricter Threshold: 300px (Increased from 150 for fast movement)
-            # If > 300px, it's likely a swap or new hand, don't snap old tracker.
-            if dist < 300: 
-                tracker_updates[t_idx] = detected_coords[p_idx]
-                used_points.add(p_idx)
-                assigned_trackers.add(t_idx)
-
-        # Assign remaining points to empty trackers
-        for p_idx in range(len(detected_coords)):
-            if p_idx not in used_points:
-                # Find a free tracker
-                for t_idx, t in enumerate(self.trackers):
-                    if t_idx not in assigned_trackers and t.last_valid_pos is None:
-                        tracker_updates[t_idx] = detected_coords[p_idx]
-                        assigned_trackers.add(t_idx)
-                        used_points.add(p_idx)
-                        break
-
-        # Apply updates
-        for t_idx, t in enumerate(self.trackers):
-            if t_idx in tracker_updates:
-                t.update(tracker_updates[t_idx])
-            else:
-                t.update(None) # Predict or Clear
-
-        # Collect data for game
-        interaction_segments = []
-        active_trails = []
-        for t in self.trackers:
-            interaction_segments.extend(t.get_segments())
-            if t.history:
-                active_trails.append(list(t.history))
-
-        # 2. Game Logic Update
-        # Spawn logic inside game depends on available types.
-        # We should filter types here or update game logic to check existence
-        # Rely on game_engine internal check if we assume it knows about ASSET_LABELS mapping
-        
-        # Pass segments even if game_over to allow "Button Logic"
-        # However, update() handles the game over check.
-        
-        # Filter Spawning here? 
-        # The Game Engine needs "available types" list for spawning.
-        # If we passed it in __init__, great. If not, we should set it.
-        # HACK: Set it directly on the instance if it's FRUIT
-        if isinstance(self.game, FruitGame) and not hasattr(self.game, 'assets_configured'):
-             available_keys = [k for k in ASSET_LABELS.keys() if k in self.images]
-             self.game.fruit_types = available_keys
-             self.game.assets_configured = True
-             
-        # PASS ACTIVE TRAILS
-        # ALWAYS Update Game (for physics/particles even in Game Over)
-        self.game.update(interaction_segments, active_trails=active_trails)
-        
-        if self.game.game_over:
-             action = self.game.check_game_over_interaction(interaction_segments)
-             if action == "RESTART":
-                 self.game.reset()
-                 self.saved_game_over = False
-                 self.video_saved = False
-                 self.frame_buffer.clear()
-             elif action == "SAVE" and not self.video_saved:
-                 self.save_video()
-             elif action == "EXIT":
-                 # Soft Reset
-                 self.game.reset()
-                 self.saved_game_over = False
-                 self.video_saved = False
-                 self.frame_buffer.clear()
-
-        # Audio Events Sync (REMOVED)
-        with _shared_state.lock:
-             if hasattr(self.game, 'events') and self.game.events:
-                 # _shared_state.audio_queue.extend(self.game.events) # Deleted queue
-                 self.game.events.clear() # Consume events but do nothing
-
-        # SAVE SCORE Logic
-        if self.game.game_over and self.is_ranked and self.username and not self.saved_game_over:
-            if self.game.won:
-                self.data_manager.add_stars(self.username, self.game.score)
-                self.saved_game_over = True
-        
-        if not self.game.game_over:
-            self.saved_game_over = False
-
-        # 3. Rendering
-        # Draw Visual Hand Cursor (New Big Bright Circle)
-        for t in self.trackers:
-            if t.last_valid_pos:
-                image = self.renderer.draw_hand_cursor(image, int(t.last_valid_pos[0]), int(t.last_valid_pos[1]))
-
-        # Draw Game Objects
-        if "FRUIT" in self.mode:
-            # Draw Halves First (behind whole fruits)
-            for h in self.game.halves:
-                x, y = int(h['pos'][0]), int(h['pos'][1])
-                img = self.images.get(h['type'])
-                if img is not None:
-                    # Draw both halves? No, the 'h' object is a specific half
-                    image = self.renderer.draw_half_fruit(image, img, x, y, h['angle'], h['side'])
-
-            # Draw Whole Fruits
-            for f in self.game.fruits:
-                x, y = int(f['pos'][0]), int(f['pos'][1])
-                img = self.images.get(f['type'])
-                if img is not None:
-                    image = self.renderer.overlay_image(image, img, x, y, f['angle'])
-                else:
-                    cv2.circle(image, (x, y), 30, (0, 0, 255), -1)
-
-            # Screen Shake Effect
-            if self.game.shake_timer > 0:
-                shake_x = np.random.randint(-15, 15)
-                shake_y = np.random.randint(-15, 15)
-                M = np.float32([[1, 0, shake_x], [0, 1, shake_y]])
-                image = cv2.warpAffine(image, M, (GAME_WIDTH, GAME_HEIGHT))
-
-            # Red Flash Effect
-            if self.game.flash_timer > 0 or (hasattr(self.game, 'frenzy_mode') and self.game.frenzy_mode):
-                overlay = image.copy()
-                
-                if hasattr(self.game, 'frenzy_mode') and self.game.frenzy_mode:
-                     overlay[:] = (0, 255, 255) # Yellow (BGR)
-                     alpha = 0.2 # Subtle Tint
-                else:
-                     overlay[:] = (0, 0, 255) # Red
-                     alpha = 0.3 * (self.game.flash_timer / 10.0) # Fade out
-                
-                image = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
-
-            # Draw Auto Slashes
-            if hasattr(self.game, 'auto_slashes'):
-                for s in self.game.auto_slashes:
-                    cv2.line(image, s['p1'], s['p2'], (255, 255, 255), 3, cv2.LINE_AA)
-                    # Add glow
-                    cv2.line(image, s['p1'], s['p2'], (200, 255, 255), 8, cv2.LINE_AA)
-
-        # Draw Particles
-        image = self.renderer.draw_particles(image, self.game.particles)
-        
-        # Draw Trails
-        if "FRUIT" in self.mode:
+            # Collect data for game
+            interaction_segments = []
+            active_trails = []
             for t in self.trackers:
-                trail = t.get_trail()
-                image = self.renderer.draw_trail(image, trail, (0, 255, 255))
+                interaction_segments.extend(t.get_segments())
+                if t.history:
+                    active_trails.append(list(t.history))
 
-        # Draw UI
-        image = self.renderer.draw_text(image, f"ĐIỂM: {self.game.score}", 10, 10, 30, (0, 255, 0))
-        image = self.renderer.draw_text(image, f"MẠNG: {self.game.lives}", 10, 50, 30, (0, 0, 255))
-        
-        if hasattr(self.game, 'frenzy_mode') and self.game.frenzy_mode:
-            image = self.renderer.draw_text(image, "CHIÊU THỨC LIÊN HOÀN!", GAME_WIDTH//2 - 150, 80, 40, (0, 255, 255))
-
-        if self.username:
-             image = self.renderer.draw_text(image, f"{self.username}", GAME_WIDTH - 150, 10, 20, (255, 255, 255))
-
-        # Countdown / Game Over Overlay
-        if self.game.is_counting_down:
-            txt = self.game.get_countdown_text()
-            text_size = 80 if txt != "BẮT ĐẦU!" else 50
-            cx = GAME_WIDTH // 2 - (len(txt)*20)
-            image = self.renderer.draw_text(image, txt, cx, GAME_HEIGHT//2, text_size, (0, 255, 255))
+            # 2. Game Logic Update
+            # Spawn logic inside game depends on available types.
+            # We should filter types here or update game logic to check existence
+            # Rely on game_engine internal check if we assume it knows about ASSET_LABELS mapping
             
-        if self.game.game_over:
-            res_txt = "CHIẾN THẮNG!" if self.game.won else "THUA CUỘC!"
-            color = (0, 255, 0) if self.game.won else (0, 0, 255)
-            # Center text
-            image = self.renderer.draw_text(image, res_txt, GAME_WIDTH//2 - 150, GAME_HEIGHT//2 - 50, 60, color)
+            # Pass segments even if game_over to allow "Button Logic"
+            # However, update() handles the game over check.
             
-            # Check delay for buttons
-            if self.game.game_over_start_time and time.time() - self.game_over_start_time > 3.0:
-                btn_w, btn_h = 160, 60
-                gap = 20
-                start_x = (GAME_WIDTH - (btn_w * 3 + gap * 2)) // 2
-                y_center = GAME_HEIGHT // 2 + 80
-                
-                # Draw Buttons: [CHƠI LẠI] [LƯU KQ] [THOÁT]
-                image = self.renderer.draw_button(image, "CHƠI LẠI", start_x + btn_w//2, y_center, btn_w, btn_h)
-                
-                save_txt = "ĐÃ LƯU" if self.video_saved else "LƯU KQ"
-                image = self.renderer.draw_button(image, save_txt, start_x + btn_w + gap + btn_w//2, y_center, btn_w, btn_h)
-                
-                image = self.renderer.draw_button(image, "THOÁT", start_x + 2*(btn_w + gap) + btn_w//2, y_center, btn_w, btn_h)
-        
-        # Buffer Frame for Recording (Only raw gameplay + overlay? Or just final frame?)
-        # Best to record final frame to see UI.
-        if not self.game.game_over:
-            self.frame_buffer.append(image)
-        elif not self.video_saved: # Keep recording end screen until saved or stopped
-             if len(self.frame_buffer) < self.frame_buffer.maxlen:
-                 self.frame_buffer.append(image)
+            # Filter Spawning here? 
+            # The Game Engine needs "available types" list for spawning.
+            # If we passed it in __init__, great. If not, we should set it.
+            # HACK: Set it directly on the instance if it's FRUIT
+            if isinstance(self.game, FruitGame) and not hasattr(self.game, 'assets_configured'):
+                 available_keys = [k for k in ASSET_LABELS.keys() if k in self.images]
+                 self.game.fruit_types = available_keys
+                 self.game.assets_configured = True
+                 
+            # PASS ACTIVE TRAILS
+            # ALWAYS Update Game (for physics/particles even in Game Over)
+            self.game.update(interaction_segments, active_trails=active_trails)
+            
+            if self.game.game_over:
+                 action = self.game.check_game_over_interaction(interaction_segments)
+                 if action == "RESTART":
+                     self.game.reset()
+                     self.saved_game_over = False
+                     self.video_saved = False
+                     self.frame_buffer.clear()
+                 elif action == "SAVE" and not self.video_saved:
+                     self.save_video()
+                 elif action == "EXIT":
+                     # Soft Reset
+                     self.game.reset()
+                     self.saved_game_over = False
+                     self.video_saved = False
+                     self.frame_buffer.clear()
 
-        return av.VideoFrame.from_ndarray(image, format="bgr24")
+            # Audio Events Sync (REMOVED)
+            with _shared_state.lock:
+                 if hasattr(self.game, 'events') and self.game.events:
+                     # _shared_state.audio_queue.extend(self.game.events) # Deleted queue
+                     self.game.events.clear() # Consume events but do nothing
+
+            # SAVE SCORE Logic
+            if self.game.game_over and self.is_ranked and self.username and not self.saved_game_over:
+                if self.game.won:
+                    self.data_manager.add_stars(self.username, self.game.score)
+                    self.saved_game_over = True
+            
+            if not self.game.game_over:
+                self.saved_game_over = False
+
+            # 3. Rendering
+            # Draw Visual Hand Cursor (New Big Bright Circle)
+            for t in self.trackers:
+                if t.last_valid_pos:
+                    image = self.renderer.draw_hand_cursor(image, int(t.last_valid_pos[0]), int(t.last_valid_pos[1]))
+
+            # Draw Game Objects
+            if "FRUIT" in self.mode:
+                # Draw Halves First (behind whole fruits)
+                for h in self.game.halves:
+                    x, y = int(h['pos'][0]), int(h['pos'][1])
+                    img = self.images.get(h['type'])
+                    if img is not None:
+                        # Draw both halves? No, the 'h' object is a specific half
+                        image = self.renderer.draw_half_fruit(image, img, x, y, h['angle'], h['side'])
+
+                # Draw Whole Fruits
+                for f in self.game.fruits:
+                    x, y = int(f['pos'][0]), int(f['pos'][1])
+                    img = self.images.get(f['type'])
+                    if img is not None:
+                        image = self.renderer.overlay_image(image, img, x, y, f['angle'])
+                    else:
+                        cv2.circle(image, (x, y), 30, (0, 0, 255), -1)
+
+                # Screen Shake Effect
+                if self.game.shake_timer > 0:
+                    shake_x = np.random.randint(-15, 15)
+                    shake_y = np.random.randint(-15, 15)
+                    M = np.float32([[1, 0, shake_x], [0, 1, shake_y]])
+                    image = cv2.warpAffine(image, M, (GAME_WIDTH, GAME_HEIGHT))
+
+                # Red Flash Effect
+                if self.game.flash_timer > 0 or (hasattr(self.game, 'frenzy_mode') and self.game.frenzy_mode):
+                    overlay = image.copy()
+                    
+                    if hasattr(self.game, 'frenzy_mode') and self.game.frenzy_mode:
+                         overlay[:] = (0, 255, 255) # Yellow (BGR)
+                         alpha = 0.2 # Subtle Tint
+                    else:
+                         overlay[:] = (0, 0, 255) # Red
+                         alpha = 0.3 * (self.game.flash_timer / 10.0) # Fade out
+                    
+                    image = cv2.addWeighted(overlay, alpha, image, 1 - alpha, 0)
+
+                # Draw Auto Slashes
+                if hasattr(self.game, 'auto_slashes'):
+                    for s in self.game.auto_slashes:
+                        cv2.line(image, s['p1'], s['p2'], (255, 255, 255), 3, cv2.LINE_AA)
+                        # Add glow
+                        cv2.line(image, s['p1'], s['p2'], (200, 255, 255), 8, cv2.LINE_AA)
+
+            # Draw Particles
+            image = self.renderer.draw_particles(image, self.game.particles)
+            
+            # Draw Trails
+            if "FRUIT" in self.mode:
+                for t in self.trackers:
+                    trail = t.get_trail()
+                    image = self.renderer.draw_trail(image, trail, (0, 255, 255))
+
+            # Draw UI
+            image = self.renderer.draw_text(image, f"ĐIỂM: {self.game.score}", 10, 10, 30, (0, 255, 0))
+            image = self.renderer.draw_text(image, f"MẠNG: {self.game.lives}", 10, 50, 30, (0, 0, 255))
+            
+            if hasattr(self.game, 'frenzy_mode') and self.game.frenzy_mode:
+                image = self.renderer.draw_text(image, "CHIÊU THỨC LIÊN HOÀN!", GAME_WIDTH//2 - 150, 80, 40, (0, 255, 255))
+
+            if self.username:
+                 image = self.renderer.draw_text(image, f"{self.username}", GAME_WIDTH - 150, 10, 20, (255, 255, 255))
+
+            # Countdown / Game Over Overlay
+            if self.game.is_counting_down:
+                txt = self.game.get_countdown_text()
+                text_size = 80 if txt != "BẮT ĐẦU!" else 50
+                cx = GAME_WIDTH // 2 - (len(txt)*20)
+                image = self.renderer.draw_text(image, txt, cx, GAME_HEIGHT//2, text_size, (0, 255, 255))
+                
+            if self.game.game_over:
+                res_txt = "CHIẾN THẮNG!" if self.game.won else "THUA CUỘC!"
+                color = (0, 255, 0) if self.game.won else (0, 0, 255)
+                # Center text
+                image = self.renderer.draw_text(image, res_txt, GAME_WIDTH//2 - 150, GAME_HEIGHT//2 - 50, 60, color)
+                
+                # Check delay for buttons
+                if self.game.game_over_start_time and time.time() - self.game_over_start_time > 3.0:
+                    btn_w, btn_h = 160, 60
+                    gap = 20
+                    start_x = (GAME_WIDTH - (btn_w * 3 + gap * 2)) // 2
+                    y_center = GAME_HEIGHT // 2 + 80
+                    
+                    # Draw Buttons: [CHƠI LẠI] [LƯU KQ] [THOÁT]
+                    image = self.renderer.draw_button(image, "CHƠI LẠI", start_x + btn_w//2, y_center, btn_w, btn_h)
+                    
+                    save_txt = "ĐÃ LƯU" if self.video_saved else "LƯU KQ"
+                    image = self.renderer.draw_button(image, save_txt, start_x + btn_w + gap + btn_w//2, y_center, btn_w, btn_h)
+                    
+                    image = self.renderer.draw_button(image, "THOÁT", start_x + 2*(btn_w + gap) + btn_w//2, y_center, btn_w, btn_h)
+            
+            # Buffer Frame for Recording (Only raw gameplay + overlay? Or just final frame?)
+            # Best to record final frame to see UI.
+            if not self.game.game_over:
+                self.frame_buffer.append(image)
+            elif not self.video_saved: # Keep recording end screen until saved or stopped
+                 if len(self.frame_buffer) < self.frame_buffer.maxlen:
+                     self.frame_buffer.append(image)
+
+            return av.VideoFrame.from_ndarray(image, format="bgr24")
+        except Exception as e:
+            print(f"Error in recv: {e}")
+            import traceback
+            traceback.print_exc()
+            try:
+                # Attempt to return a frame with error text
+                img = frame.to_ndarray(format="bgr24")
+                img = cv2.resize(img, (GAME_WIDTH, GAME_HEIGHT))
+                cv2.putText(img, f"ERROR: {str(e)}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                return av.VideoFrame.from_ndarray(img, format="bgr24")
+            except:
+                return frame
 
 # --- Streamlit Main App ---
 st.set_page_config(page_title="Be & An Game V4", layout="wide")
