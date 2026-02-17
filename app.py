@@ -329,6 +329,31 @@ class GameVideoProcessor(VideoProcessorBase):
                     used_points.add(p_idx)
                     assigned_trackers.add(t_idx)
 
+            # Rescue Pass: Assign remaining points to unmatched ACTIVE trackers (ignoring strict threshold)
+            # This prevents ghosting where a fast hand breaks track and starts a new one concurrently.
+            for p_idx in range(len(detected_coords)):
+                if p_idx in used_points: continue
+                
+                best_t = -1
+                best_dist = 9999
+                
+                for t_idx, t in enumerate(self.trackers):
+                    if t_idx not in assigned_trackers and t.last_valid_pos is not None:
+                        # Calculate distance to LAST KNOWN pos (not predicted, which might be wrong)
+                        px, py = detected_coords[p_idx]
+                        tx, ty = t.last_valid_pos
+                        dist = np.hypot(px - tx, py - ty)
+                        
+                        if dist < best_dist:
+                            best_dist = dist
+                            best_t = t_idx
+                
+                # Assign if found (Rescue)
+                if best_t != -1:
+                    tracker_updates[best_t] = detected_coords[p_idx]
+                    assigned_trackers.add(best_t)
+                    used_points.add(p_idx)
+
             # Assign remaining points to empty trackers
             for p_idx in range(len(detected_coords)):
                 if p_idx not in used_points:
