@@ -465,27 +465,36 @@ class GameVideoProcessor(VideoProcessorBase):
                     image = self.renderer.draw_trail(image, trail, (0, 255, 255))
 
             # Draw UI
-            image = self.renderer.draw_text(image, f"ĐIỂM: {self.game.score}", 10, 10, 30, (0, 255, 0))
-            image = self.renderer.draw_text(image, f"MẠNG: {self.game.lives}", 10, 50, 30, (0, 0, 255))
+            image = self.renderer.draw_text(image, f"ĐIỂM: {self.game.score}", 10, 10, 30, (0, 255, 0), outline_color=(0,0,0), outline_width=2)
+            image = self.renderer.draw_text(image, f"MẠNG: {self.game.lives}", 10, 50, 30, (0, 0, 255), outline_color=(0,0,0), outline_width=2)
             
+            if hasattr(self.game, 'combo_text_timer') and self.game.combo_text_timer > 0 and self.game.combo_count >= 3:
+                 # Combo Text
+                 txt = f"{self.game.combo_count} FRUIT COMBO!"
+                 # Shake or scale based on timer?
+                 scale = 1.0 + (self.game.combo_count * 0.1)
+                 color = (0, 165, 255) # Orange
+                 image = self.renderer.draw_text(image, txt, GAME_WIDTH//2 - 250, 150, 40, color, outline_color=(0,0,0), outline_width=3)
+                 image = self.renderer.draw_text(image, f"+{self.game.combo_count}", GAME_WIDTH//2 - 50, 200, 60, (0, 255, 255), outline_color=(0,0,0), outline_width=3)
+
             if hasattr(self.game, 'frenzy_mode') and self.game.frenzy_mode:
-                image = self.renderer.draw_text(image, "CHIÊU THỨC LIÊN HOÀN!", GAME_WIDTH//2 - 150, 80, 40, (0, 255, 255))
+                image = self.renderer.draw_text(image, "CHIÊU THỨC LIÊN HOÀN!", GAME_WIDTH//2 - 200, 80, 45, (0, 255, 255), outline_color=(0,0,255), outline_width=3)
 
             if self.display_name:
-                 image = self.renderer.draw_text(image, f"{self.display_name}", GAME_WIDTH - 150, 10, 20, (255, 255, 255))
+                 image = self.renderer.draw_text(image, f"{self.display_name}", GAME_WIDTH - 200, 10, 20, (255, 255, 255), outline_color=(0,0,0), outline_width=1)
 
             # Countdown / Game Over Overlay
             if self.game.is_counting_down:
                 txt = self.game.get_countdown_text()
-                text_size = 80 if txt != "BẮT ĐẦU!" else 50
-                cx = GAME_WIDTH // 2 - (len(txt)*20)
-                image = self.renderer.draw_text(image, txt, cx, GAME_HEIGHT//2, text_size, (0, 255, 255))
+                text_size = 100 if txt != "BẮT ĐẦU!" else 70
+                cx = GAME_WIDTH // 2 - (len(txt)*25)
+                image = self.renderer.draw_text(image, txt, cx, GAME_HEIGHT//2, text_size, (0, 255, 255), outline_color=(0,0,0), outline_width=4)
                 
             if self.game.game_over:
                 res_txt = "CHIẾN THẮNG!" if self.game.won else "THUA CUỘC!"
                 color = (0, 255, 0) if self.game.won else (0, 0, 255)
                 # Center text
-                image = self.renderer.draw_text(image, res_txt, GAME_WIDTH//2 - 150, GAME_HEIGHT//2 - 50, 60, color)
+                image = self.renderer.draw_text(image, res_txt, GAME_WIDTH//2 - 180, GAME_HEIGHT//2 - 60, 70, color, outline_color=(255,255,255), outline_width=3)
                 
                 # Check delay for buttons
                 if self.game.game_over_start_time and time.time() - self.game.game_over_start_time > 3.0:

@@ -35,3 +35,13 @@ ASSET_LABELS = {
     'spike': 'Gai (Spike)', # Will map to bomb
     'first_aid': 'Túi cứu thương' # Will likely disable if image missing
 }
+
+# Particle Colors (BGR)
+PARTICLE_COLORS = {
+    'apple': (0, 0, 255),       # Red
+    'orange': (0, 165, 255),    # Orange
+    'mango': (0, 255, 255),     # Yellow
+    'watermelon': (0, 0, 200),  # Red-ish
+    'bomb': (50, 50, 50),       # Dark Grey
+    'default': (200, 200, 200)  # White/Grey
+}

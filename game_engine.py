@@ -1,7 +1,7 @@
 import random
 import time
 import numpy as np
-from game_config import GAME_WIDTH, GAME_HEIGHT
+from game_config import GAME_WIDTH, GAME_HEIGHT, PARTICLE_COLORS
 
 class Particle:
     def __init__(self, x, y, color, is_splash=False):
@@ -133,6 +133,11 @@ class FruitGame(BaseGame):
         self.auto_slashes = []
         self.shake_timer = 0
         self.flash_timer = 0
+        
+        # Combo System
+        self.combo_count = 0
+        self.combo_timer = 0
+        self.combo_text_timer = 0 # To keep text on screen a bit longer
 
     def spawn(self, available_types):
         if not available_types: return
@@ -278,6 +283,15 @@ class FruitGame(BaseGame):
             if self.shake_timer > 0: self.shake_timer -= 1
             if self.flash_timer > 0: self.flash_timer -= 1
             
+            # Update Combo
+            if self.combo_timer > 0:
+                self.combo_timer -= (1/30.0)
+                if self.combo_timer <= 0:
+                    self.combo_count = 0
+            
+            if self.combo_text_timer > 0:
+                self.combo_text_timer -= (1/30.0)
+            
             # Update Frenzy Mode
             if self.frenzy_mode:
                 self.frenzy_timer -= (1/30.0) # Approx 30fps
@@ -404,9 +418,15 @@ class FruitGame(BaseGame):
         else:
             self.score += 1
             self.events.append("hit_fruit")
+            
+            # Combo Logic
+            self.combo_count += 1
+            self.combo_timer = 0.8 # Reset timer
+            if self.combo_count >= 3:
+                self.combo_text_timer = 1.0 # Show text for 1s
+            
             # Juice particles
-            # Juice particles
-            color = (0, 255, 255) # Yellow default
+            color = PARTICLE_COLORS.get(fruit['type'], PARTICLE_COLORS['default'])
             
             # IMPROVED HIT EFFECT: More particles, faster spread
             for _ in range(8):

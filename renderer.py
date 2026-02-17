@@ -23,9 +23,9 @@ class TextCache:
         return cls._font_cache[font_key]
 
     @classmethod
-    def get_text_image(cls, text, size, color_bgr):
+    def get_text_image(cls, text, size, color_bgr, outline_color=(0,0,0), outline_width=0):
         # Key includes all visual properties
-        key = (text, size, color_bgr)
+        key = (text, size, color_bgr, outline_color, outline_width)
         
         if key in cls._cache:
             return cls._cache[key]
@@ -38,9 +38,10 @@ class TextCache:
         text_w = right - left
         text_h = bottom - top
         
-        # Add padding
-        w = text_w + 10
-        h = text_h + 10 # slightly more vertical padding
+        # Add padding (more for outline)
+        pad = outline_width * 2 + 10
+        w = text_w + pad
+        h = text_h + pad
         
         # Create transparent image
         img_pil = Image.new('RGBA', (w, h + 10), (0, 0, 0, 0))
@@ -48,9 +49,15 @@ class TextCache:
         
         # Convert BGR to RGB
         color_rgb = (color_bgr[2], color_bgr[1], color_bgr[0])
+        outline_rgb = (outline_color[2], outline_color[1], outline_color[0])
         
-        # Draw text
-        draw.text((0, 0), text, font=font, fill=color_rgb + (255,))
+        # Draw text with outline
+        # Position with padding
+        x, y = pad // 2, 0
+        if outline_width > 0:
+            draw.text((x, y), text, font=font, fill=color_rgb + (255,), stroke_width=outline_width, stroke_fill=outline_rgb + (255,))
+        else:
+            draw.text((x, y), text, font=font, fill=color_rgb + (255,))
         
         # Convert to OpenCV (RGBA)
         img_cv = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGBA2BGRA)
@@ -74,11 +81,11 @@ class GameRenderer:
         cv2.circle(frame, (x, y), 3, (255, 255, 255), -1)
         return frame
 
-    def draw_text(self, frame, text, x, y, size, color=(255, 255, 255)):
+    def draw_text(self, frame, text, x, y, size, color=(255, 255, 255), outline_color=(0,0,0), outline_width=0):
         """
         Draws high-quality cached text onto the frame.
         """
-        text_img = TextCache.get_text_image(text, size, color)
+        text_img = TextCache.get_text_image(text, size, color, outline_color, outline_width)
         h, w = text_img.shape[:2]
         
         # Overlay
@@ -188,30 +195,47 @@ class GameRenderer:
     def draw_particles(self, frame, particles):
         for p in particles:
             if p.life <= 0: continue
-            # Simple circle drawing is fast in CV2
-            cv2.circle(frame, (int(p.x), int(p.y)), p.size, p.color, -1)
+            
+            # Draw splash-like particle
+            # Use ellipse for directional splash if we had velocity, but circle is fine
+            # Maybe vary size slightly by life?
+            size = p.size
+            if p.is_splash:
+                # Shrink correctly over life
+                pass
+            
+            cv2.circle(frame, (int(p.x), int(p.y)), size, p.color, -1)
         return frame
 
     def draw_trail(self, frame, points, color=(0, 255, 255)):
         """
-        Draws a fading trail following the points.
-        points: list of (x, y) tuples, oldest first.
+        Draws a glowing trail.
         """
         if len(points) < 2: return frame
         
-        # Draw segments with increasing thickness/opacity
+        # Draw Glow (Thick, colored)
+        # We can simulate glow with multiple lines or just one thick line
+        # Simpler is better for performance
+        
+        # 1. Outer Glow
         for i in range(len(points) - 1):
             pt1 = points[i]
             pt2 = points[i+1]
-            
-            # Progress factor (0.0 to 1.0)
             progress = i / (len(points) - 1)
+            thickness = int(4 + 12 * progress) # Thicker
             
-            # Base thickness 2 to 10
-            thickness = int(2 + 8 * progress)
-            
-            # Draw line
+            # Fade alpha? CV2 line doesn't support alpha directly without overly complex blending
+            # Just draw solid color for now, maybe BGR
             cv2.line(frame, pt1, pt2, color, thickness, cv2.LINE_AA)
+            
+        # 2. Inner Core (White/Bright)
+        for i in range(len(points) - 1):
+            pt1 = points[i]
+            pt2 = points[i+1]
+            progress = i / (len(points) - 1)
+            thickness = int(1 + 4 * progress) # Thinner
+            
+            cv2.line(frame, pt1, pt2, (255, 255, 255), thickness, cv2.LINE_AA)
             
         return frame
 
