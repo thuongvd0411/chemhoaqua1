@@ -115,6 +115,24 @@ class GameRenderer:
                                       alpha_l * frame[y1:y2, x1:x2, c])
         return frame
 
+    def draw_shadow(self, frame, x, y, size=30):
+        """
+        Draws a semi-transparent shadow below the object.
+        """
+        # Create a shadow overlay
+        shadow_h, shadow_w = 20, size * 2
+        
+        # Check bounds
+        if y + 30 >= frame.shape[0] or x - shadow_w//2 < 0 or x + shadow_w//2 >= frame.shape[1]:
+            return frame
+            
+        overlay = frame.copy()
+        cv2.ellipse(overlay, (x, y + 40), (size, 10), 0, 0, 360, (0, 0, 0), -1)
+        
+        # Blend (Alpha 0.3)
+        cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
+        return frame
+
     def overlay_image(self, background, overlay, x, y, angle=0):
         """
         Efficiently overlays a transparent image (optionally rotated).

@@ -35,6 +35,7 @@ class MotionTracker:
         self.last_valid_pos = None
         self.velocity = (0, 0)
         self.missing_frames = 0
+        self.prediction_frames = 5 # Increased from default (likely 2-3) to 5 for better gap filling
         
     def update(self, pos):
         """
@@ -56,8 +57,8 @@ class MotionTracker:
                 vy = smoothed_pos[1] - self.last_valid_pos[1]
                 
                 # Simple smoothing for velocity
-                self.velocity = (vx * 0.8 + self.velocity[0] * 0.2, 
-                                 vy * 0.8 + self.velocity[1] * 0.2)
+                self.velocity = (vx * 0.7 + self.velocity[0] * 0.3, 
+                                 vy * 0.7 + self.velocity[1] * 0.3)
                                  
                 self.last_valid_pos = smoothed_pos
                 self.history.append(smoothed_pos)
@@ -411,7 +412,10 @@ class GameVideoProcessor(VideoProcessorBase):
                     image = self.renderer.draw_hand_cursor(image, int(t.last_valid_pos[0]), int(t.last_valid_pos[1]))
 
             # Draw Game Objects
-            if "FRUIT" in self.mode:
+                # 1. Draw Shadows (First, so they are behind everything)
+                for f in self.game.fruits:
+                     self.renderer.draw_shadow(image, int(f['pos'][0]), int(f['pos'][1]), size=30)
+                
                 # Draw Halves First (behind whole fruits)
                 for h in self.game.halves:
                     x, y = int(h['pos'][0]), int(h['pos'][1])
@@ -419,7 +423,7 @@ class GameVideoProcessor(VideoProcessorBase):
                     if img is not None:
                         # Draw both halves? No, the 'h' object is a specific half
                         image = self.renderer.draw_half_fruit(image, img, x, y, h['angle'], h['side'])
-
+                        
                 # Draw Whole Fruits
                 for f in self.game.fruits:
                     x, y = int(f['pos'][0]), int(f['pos'][1])
@@ -427,7 +431,7 @@ class GameVideoProcessor(VideoProcessorBase):
                     if img is not None:
                         image = self.renderer.overlay_image(image, img, x, y, f['angle'])
                     else:
-                        cv2.circle(image, (x, y), 30, (0, 0, 255), -1)
+                         cv2.circle(image, (x, y), 30, (0, 0, 255), -1)
 
                 # Screen Shake Effect
                 if self.game.shake_timer > 0:
