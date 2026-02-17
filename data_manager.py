@@ -17,8 +17,12 @@ class DataManager:
             return {}
 
     def save_data(self):
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(self.users, f, ensure_ascii=False, indent=4)
+        try:
+            with open(DATA_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.users, f, ensure_ascii=False, indent=4)
+        except Exception as e:
+            # On Streamlit Cloud or read-only systems, just ignore save
+            print(f"Warning: Could not save data: {e}")
 
     def login(self, username):
         """Returns user dict if exists, else None"""

@@ -230,28 +230,32 @@ class GameVideoProcessor(VideoProcessorBase):
     def save_video(self):
         if not self.frame_buffer: return
         
-        # Save to recordings folder
-        rec_dir = "recordings"
-        if not os.path.exists(rec_dir):
-            os.makedirs(rec_dir)
+        try:
+            # Save to recordings folder
+            rec_dir = "recordings"
+            if not os.path.exists(rec_dir):
+                os.makedirs(rec_dir)
+                
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            filename = f"{rec_dir}/gameplay_{timestamp}.mp4"
             
-        timestamp = time.strftime("%Y%m%d-%H%M%S")
-        filename = f"{rec_dir}/gameplay_{timestamp}.mp4"
-        
-        # Get dimensions from first frame
-        first_frame = self.frame_buffer[0]
-        h, w, c = first_frame.shape
-        
-        # Writer
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        out = cv2.VideoWriter(filename, fourcc, 30.0, (w, h))
-        
-        for f in self.frame_buffer:
-            out.write(f)
+            # Get dimensions from first frame
+            first_frame = self.frame_buffer[0]
+            h, w, c = first_frame.shape
             
-        out.release()
-        self.video_saved = True
-        print(f"Video saved to {filename}")
+            # Writer
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(filename, fourcc, 30.0, (w, h))
+            
+            for f in self.frame_buffer:
+                out.write(f)
+                
+            out.release()
+            self.video_saved = True
+            print(f"Video saved to {filename}")
+        except Exception as e:
+            print(f"Warning: Could not save video: {e}")
+            self.video_saved = True # Pretend we saved to stop retrying
 
     def load_assets(self):
         for k in ASSET_LABELS.keys():
@@ -614,11 +618,14 @@ if st.session_state['user']:
     uploaded_file = st.sidebar.file_uploader("Chọn ảnh (PNG/JPG)", type=['png', 'jpg', 'jpeg'])
     if uploaded_file:
          # Save logic
-         bytes_data = uploaded_file.read()
-         # Save to assets with username
-         with open(os.path.join(ASSETS_DIR, f"{st.session_state['username']}_avatar.png"), "wb") as f:
-             f.write(bytes_data)
-         st.sidebar.success("Đã cập nhật ảnh!")
+         try:
+             bytes_data = uploaded_file.read()
+             # Save to assets with username
+             with open(os.path.join(ASSETS_DIR, f"{st.session_state['username']}_avatar.png"), "wb") as f:
+                 f.write(bytes_data)
+             st.sidebar.success("Đã cập nhật ảnh!")
+         except Exception as e:
+             st.sidebar.warning(f"Không thể lưu ảnh (Read-only mode): {e}")
          
     if st.sidebar.button("Đăng xuất"):
         st.session_state['user'] = None
