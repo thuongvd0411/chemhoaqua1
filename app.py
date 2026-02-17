@@ -483,7 +483,7 @@ class GameVideoProcessor(VideoProcessorBase):
                 image = self.renderer.draw_text(image, res_txt, GAME_WIDTH//2 - 150, GAME_HEIGHT//2 - 50, 60, color)
                 
                 # Check delay for buttons
-                if self.game.game_over_start_time and time.time() - self.game_over_start_time > 3.0:
+                if self.game.game_over_start_time and time.time() - self.game.game_over_start_time > 3.0:
                     btn_w, btn_h = 160, 60
                     gap = 20
                     start_x = (GAME_WIDTH - (btn_w * 3 + gap * 2)) // 2
