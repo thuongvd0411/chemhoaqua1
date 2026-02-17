@@ -534,6 +534,8 @@ class GameVideoProcessor(VideoProcessorBase):
                 # Attempt to return a frame with error text
                 img = frame.to_ndarray(format="bgr24")
                 img = cv2.resize(img, (GAME_WIDTH, GAME_HEIGHT))
+                img = cv2.flip(img, 1) # FLIP TO MATCH GAMEPLAY
+                
                 cv2.putText(img, f"ERROR: {str(e)}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
                 return av.VideoFrame.from_ndarray(img, format="bgr24")
             except:

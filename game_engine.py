@@ -9,6 +9,7 @@ class Particle:
         self.y = y
         self.life = 0.8
         self.color = color
+        self.is_splash = is_splash
         self.size = random.randint(2, 5)
         if is_splash:
             self.vx = random.uniform(-3, 3)
