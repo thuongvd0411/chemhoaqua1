@@ -1,5 +1,5 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, RTCConfiguration, VideoProcessorBase, AudioProcessorBase, WebRtcMode
+from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, RTCConfiguration, VideoProcessorBase, WebRtcMode
 import cv2
 import mediapipe as mp
 import av
@@ -15,95 +15,13 @@ from game_engine import FruitGame, MoleGame
 from renderer import GameRenderer
 from data_manager import DataManager
 
-# --- Audio Synth ---
-class SoundSynth:
-    def __init__(self, sample_rate=48000):
-        self.sample_rate = sample_rate
-        
-    def generate_tone(self, frequency, duration, volume=0.5):
-        t = np.linspace(0, duration, int(self.sample_rate * duration), False)
-        tone = np.sin(frequency * t * 2 * np.pi)
-        # Apply envelope
-        envelope = np.exp(-3 * t) # Decay
-        return (tone * envelope * volume * 32767).astype(np.int16)
-
-    def generate_noise(self, duration, volume=0.5):
-        samples = int(self.sample_rate * duration)
-        noise = np.random.uniform(-1, 1, samples)
-        t = np.linspace(0, duration, samples, False)
-        envelope = np.exp(-5 * t)
-        return (noise * envelope * volume * 32767).astype(np.int16)
-
 # --- Shared State ---
 class SharedGameState:
     def __init__(self):
         self.game = None
-        self.audio_queue = deque()
         self.lock = threading.Lock()
         
 _shared_state = SharedGameState()
-
-class GameAudioProcessor(AudioProcessorBase):
-    def __init__(self):
-        self.synth = SoundSynth()
-        self.current_audio = np.array([], dtype=np.int16)
-        
-    def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
-        # 1. Process Events (Pop from queue, synthesize OUTSIDE lock)
-        events_to_process = []
-        with _shared_state.lock:
-            # Limit processing to prevent lag spikes (e.g. max 10 sounds per frame)
-            count = 0
-            while _shared_state.audio_queue and count < 10:
-                events_to_process.append(_shared_state.audio_queue.popleft())
-                count += 1
-            # If queue is huge, clear it to prevent debt
-            if len(_shared_state.audio_queue) > 20:
-                _shared_state.audio_queue.clear()
-        
-        # Synthesize (No Lock)
-        new_samples = []
-        for event in events_to_process:
-            sound = None
-            if event == "hit_fruit":
-                sound = self.synth.generate_tone(600, 0.1, 0.3)
-            elif event == "hit_bomb":
-                sound = self.synth.generate_noise(0.3, 0.6)
-            elif event == "hit_bonus":
-                sound = self.synth.generate_tone(800, 0.15, 0.5)
-            elif event == "hit_item":
-                sound = self.synth.generate_tone(400, 0.2, 0.5)
-            elif event == "frenzy":
-                # Sweep
-                sound = self.synth.generate_tone(1000, 0.5, 0.5)
-            
-            if sound is not None:
-                new_samples.append(sound)
-
-        # Batch update buffer
-        if new_samples:
-            # Concatenate all new sounds first
-            combined_new = np.concatenate(new_samples)
-            # Append to current buffer
-            self.current_audio = np.concatenate((self.current_audio, combined_new))
-        
-        # 2. Render to Frame
-        required_samples = frame.samples
-        output_audio = np.zeros(required_samples, dtype=np.int16)
-        
-        if len(self.current_audio) > 0:
-            # Copy available
-            n = min(len(self.current_audio), required_samples)
-            output_audio[:n] = self.current_audio[:n]
-            self.current_audio = self.current_audio[n:]
-            
-        # Replicate channels (Mono to Stereo)
-        # WebRTC usually expects Stereo 2 channels
-        stereo = np.column_stack((output_audio, output_audio))
-        
-        new_frame = av.AudioFrame.from_ndarray(stereo, format='s16', layout='stereo')
-        new_frame.sample_rate = frame.sample_rate
-        return new_frame
 
 # --- Global State ---
 mp_hands = mp.solutions.hands
@@ -449,23 +367,26 @@ class GameVideoProcessor(VideoProcessorBase):
         self.game.update(interaction_segments, active_trails=active_trails)
         
         if self.game.game_over:
-             if self.game.check_restart(interaction_segments):
+             action = self.game.check_game_over_interaction(interaction_segments)
+             if action == "RESTART":
                  self.game.reset()
                  self.saved_game_over = False
                  self.video_saved = False
                  self.frame_buffer.clear()
-                 
-             if not self.video_saved and self.game.check_save_video(interaction_segments):
+             elif action == "SAVE" and not self.video_saved:
                  self.save_video()
-                 # Trigger sound?
-                 with _shared_state.lock:
-                      _shared_state.audio_queue.append("hit_item") # Feedback sound
+             elif action == "EXIT":
+                 # Soft Reset
+                 self.game.reset()
+                 self.saved_game_over = False
+                 self.video_saved = False
+                 self.frame_buffer.clear()
 
-        # Audio Events Sync
+        # Audio Events Sync (REMOVED)
         with _shared_state.lock:
              if hasattr(self.game, 'events') and self.game.events:
-                 _shared_state.audio_queue.extend(self.game.events)
-                 self.game.events.clear() # Consume events
+                 # _shared_state.audio_queue.extend(self.game.events) # Deleted queue
+                 self.game.events.clear() # Consume events but do nothing
 
         # SAVE SCORE Logic
         if self.game.game_over and self.is_ranked and self.username and not self.saved_game_over:
@@ -562,12 +483,18 @@ class GameVideoProcessor(VideoProcessorBase):
             
             # Check delay for buttons
             if self.game.game_over_start_time and time.time() - self.game_over_start_time > 3.0:
-                # Draw Restart Button (Left Side)
-                image = self.renderer.draw_button(image, "CHƠI LẠI", GAME_WIDTH//2 - 140, GAME_HEIGHT//2 + 80, 240, 60)
+                btn_w, btn_h = 160, 60
+                gap = 20
+                start_x = (GAME_WIDTH - (btn_w * 3 + gap * 2)) // 2
+                y_center = GAME_HEIGHT // 2 + 80
                 
-                # Draw Save Video Button (Right Side)
-                save_txt = "ĐÃ LƯU!" if self.video_saved else "LƯU VIDEO"
-                image = self.renderer.draw_button(image, save_txt, GAME_WIDTH//2 + 140, GAME_HEIGHT//2 + 80, 240, 60)
+                # Draw Buttons: [CHƠI LẠI] [LƯU KQ] [THOÁT]
+                image = self.renderer.draw_button(image, "CHƠI LẠI", start_x + btn_w//2, y_center, btn_w, btn_h)
+                
+                save_txt = "ĐÃ LƯU" if self.video_saved else "LƯU KQ"
+                image = self.renderer.draw_button(image, save_txt, start_x + btn_w + gap + btn_w//2, y_center, btn_w, btn_h)
+                
+                image = self.renderer.draw_button(image, "THOÁT", start_x + 2*(btn_w + gap) + btn_w//2, y_center, btn_w, btn_h)
         
         # Buffer Frame for Recording (Only raw gameplay + overlay? Or just final frame?)
         # Best to record final frame to see UI.
@@ -699,9 +626,8 @@ if choice == "Chơi Game":
             key="game_stream",
             mode=WebRtcMode.SENDRECV,
             rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-            media_stream_constraints={"video": {"width": 640, "height": 480}, "audio": True},
+            media_stream_constraints={"video": {"width": 640, "height": 480}, "audio": False},
             video_processor_factory=GameVideoProcessor,
-            audio_processor_factory=GameAudioProcessor,
             async_processing=True,
         )
 

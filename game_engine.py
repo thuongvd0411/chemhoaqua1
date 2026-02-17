@@ -55,41 +55,38 @@ class BaseGame:
             return str(int(np.ceil(remaining)))
         return "BẮT ĐẦU!"
 
-    def check_restart(self, interaction_segments):
+    def check_game_over_interaction(self, interaction_segments):
         # Enforce 3s delay
-        if self.game_over_start_time is None: return False
-        if time.time() - self.game_over_start_time < 3.0: return False
+        if self.game_over_start_time is None: return None
+        if time.time() - self.game_over_start_time < 3.0: return None
 
-        # Button Area: Center(WIDTH/2 - 140, HEIGHT/2 + 80), Size(240, 60) -> Moved slightly left to make room
-        bx = self.width // 2 - 140
-        by = self.height // 2 + 80
-        half_w, half_h = 120, 30
+        # Button Config
+        # Center X = self.width // 2
+        # Buttons: [CHƠI LẠI] [LƯU KQ] [THOÁT]
+        # Width: 160 each, Gap: 20 -> Total 520
+        # Start X = (self.width - 520) // 2 -> 60
         
-        x1, x2 = bx - half_w, bx + half_w
-        y1, y2 = by - half_h, by + half_h
+        btn_w, btn_h = 160, 60
+        gap = 20
+        start_x = (self.width - (btn_w * 3 + gap * 2)) // 2
+        y_center = self.height // 2 + 80
         
-        for (px1, py1), (px2, py2) in interaction_segments:
-             if (x1 <= px2 <= x2 and y1 <= py2 <= y2):
-                 return True
-        return False
-
-    def check_save_video(self, interaction_segments):
-        # Enforce 3s delay
-        if self.game_over_start_time is None: return False
-        if time.time() - self.game_over_start_time < 3.0: return False
-
-        # Button Area: Center(WIDTH/2 + 140, HEIGHT/2 + 80), Size(240, 60)
-        bx = self.width // 2 + 140 # Right side
-        by = self.height // 2 + 80
-        half_w, half_h = 120, 30
+        buttons = [
+            {"label": "RESTART", "x": start_x + btn_w//2, "y": y_center},
+            {"label": "SAVE", "x": start_x + btn_w + gap + btn_w//2, "y": y_center},
+            {"label": "EXIT", "x": start_x + 2*(btn_w + gap) + btn_w//2, "y": y_center}
+        ]
         
-        x1, x2 = bx - half_w, bx + half_w
-        y1, y2 = by - half_h, by + half_h
-        
-        for (px1, py1), (px2, py2) in interaction_segments:
-             if (x1 <= px2 <= x2 and y1 <= py2 <= y2):
-                 return True
-        return False
+        for p1, p2 in interaction_segments:
+            for btn in buttons:
+                bx, by = btn['x'], btn['y']
+                x1, x2 = bx - btn_w//2, bx + btn_w//2
+                y1, y2 = by - btn_h//2, by + btn_h//2
+                
+                # Check interaction (simple box overlap with segment end p2)
+                if (x1 <= p2[0] <= x2 and y1 <= p2[1] <= y2):
+                    return btn['label']
+        return None
 
     def reset(self):
         self.score = 0
