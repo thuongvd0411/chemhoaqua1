@@ -386,9 +386,11 @@ class GameVideoProcessor(VideoProcessorBase):
                      self.latest_video_path = None
                      self.frame_buffer.clear()
                  elif action == "SAVE":
+                     print("DEBUG: SAVE CLICKED")
                      if not self.video_saved:
                          self.save_video()
                  elif action == "EXIT":
+                     print("DEBUG: EXIT CLICKED")
                      self.exit_requested = True
 
             # Audio Events Sync (REMOVED)
@@ -413,10 +415,7 @@ class GameVideoProcessor(VideoProcessorBase):
                     image = self.renderer.draw_hand_cursor(image, int(t.last_valid_pos[0]), int(t.last_valid_pos[1]))
 
             # Draw Game Objects
-                # 1. Draw Shadows (First, so they are behind everything)
-                for f in self.game.fruits:
-                     self.renderer.draw_shadow(image, int(f['pos'][0]), int(f['pos'][1]), size=30)
-                
+            if "FRUIT" in self.mode:
                 # Draw Halves First (behind whole fruits)
                 for h in self.game.halves:
                     x, y = int(h['pos'][0]), int(h['pos'][1])
@@ -690,41 +689,23 @@ if choice == "Chơi Game":
             status_area = st.empty()
             while ctx.state.playing:
                 if ctx.video_processor:
+                    # Check Exit
                     if ctx.video_processor.exit_requested:
-                        status_area.warning("Đang thoát game...")
-                        time.sleep(1) # Visual feedback
-                        # Do not rely on session_state being thread-safe here, 
-                        # but since we are in main thread loop, it is safe.
-                        # How to return to menu?
-                        # Streamlit reruns on interaction. We force rerun?
-                        # We can't change 'mode' radio easily without session state hack.
-                        # Assuming Main Menu is default state or we use session state.
-                        # But wait, this loop blocks the script?
-                        # Yes, but Streamlit script needs to finish to render?
-                        # No, webrtc is async. The script finishes.
-                        # If we loop HERE, the script NEVER finishes (until break). 
-                        # This is fine for a game loop if we want to update UI from python.
-                        # BUT Streamlit UI won't update unless we use st.empty().
-                        pass
-                        
-                        # HANDLE EXIT
-                        # Set a flag in session state to show menu on next run
-                        # But we are inside the run.
-                        # We need to break loop and rerun.
+                        # status_area.warning("Đang thoát game...") # causes rerun itself?
                         st.session_state['force_exit'] = True
                         break
                     
+                    # Check Video
                     if ctx.video_processor.latest_video_path:
                         st.session_state['last_video'] = ctx.video_processor.latest_video_path
-                        # Clear it in processor so we don't re-trigger
                         ctx.video_processor.latest_video_path = None
-                        status_area.success(f"Video đã lưu! Đang tải lại...")
+                        st.success("Video đã lưu!") # Visual feedback
                         time.sleep(1)
-                        st.rerun()
+                        st.rerun() # Force rerun to show video player
                 
                 time.sleep(0.5)
 
-        # Handle Exit Flag
+        # Handle Exit Flag (Outside Loop)
         if st.session_state.get('force_exit'):
             del st.session_state['force_exit']
             st.rerun() # This should reset the app state if not controlled by other session vars
