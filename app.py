@@ -194,7 +194,7 @@ class GameVideoProcessor(VideoProcessorBase):
         # Increase max_num_hands to 4 for 2 players
         # Tweak: Increased min_detection to 0.6 to reduce "ghost hands"
         self.hands = mp_hands.Hands(max_num_hands=4, min_detection_confidence=0.5, min_tracking_confidence=0.5, model_complexity=1)
-        self.pose = mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6, model_complexity=0)
+        self.pose = mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6, model_complexity=1)
         
         # Modules
         # SHARED STATE LINK
