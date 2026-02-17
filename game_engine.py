@@ -113,6 +113,11 @@ class FruitGame(BaseGame):
         self.shake_timer = 0
         self.flash_timer = 0
         
+        # Combo System
+        self.combo_count = 0
+        self.combo_timer = 0
+        self.combo_text_timer = 0
+        
         # Frenzy Mode (Hidden Skill)
         self.frenzy_mode = False
         self.frenzy_timer = 0
