@@ -135,6 +135,7 @@ class GameVideoProcessor(VideoProcessorBase):
         
         # User Context
         self.username = None
+        self.display_name = None
         self.data_manager = DataManager() 
         self.is_ranked = False
         self.is_ranked = False
@@ -192,8 +193,9 @@ class GameVideoProcessor(VideoProcessorBase):
                         img = cv2.resize(img, (int(w*s), int(h*s)))
                     self.images[k] = img
 
-    def set_user_context(self, username):
+    def set_user_context(self, username, display_name=None):
         self.username = username
+        self.display_name = display_name if display_name else username
         
     def set_game_mode(self, mode):
         # Reset trackers when switching modes
@@ -469,8 +471,8 @@ class GameVideoProcessor(VideoProcessorBase):
             if hasattr(self.game, 'frenzy_mode') and self.game.frenzy_mode:
                 image = self.renderer.draw_text(image, "CHIÊU THỨC LIÊN HOÀN!", GAME_WIDTH//2 - 150, 80, 40, (0, 255, 255))
 
-            if self.username:
-                 image = self.renderer.draw_text(image, f"{self.username}", GAME_WIDTH - 150, 10, 20, (255, 255, 255))
+            if self.display_name:
+                 image = self.renderer.draw_text(image, f"{self.display_name}", GAME_WIDTH - 150, 10, 20, (255, 255, 255))
 
             # Countdown / Game Over Overlay
             if self.game.is_counting_down:
@@ -666,9 +668,13 @@ if choice == "Chơi Game":
         if ctx.video_processor:
             # Pass User Context to Processor
             if st.session_state['user']:
-                ctx.video_processor.set_user_context(st.session_state['username'])
+                # Pass both username (for ID) and display_name (for UI)
+                ctx.video_processor.set_user_context(
+                    st.session_state['username'], 
+                    st.session_state['user'].get('display_name')
+                )
             else:
-                ctx.video_processor.set_user_context(None)
+                ctx.video_processor.set_user_context(None, None)
                 
             ctx.video_processor.set_game_mode(game_key)
 
@@ -693,9 +699,23 @@ elif choice == "Lịch Sử":
     if st.session_state['user']:
         # Reload to get latest
         user = st.session_state['data_manager'].login(st.session_state['username'])
-        if user and 'history' in user:
-            for h in reversed(user['history']):
-                st.text(f"Ngày: {h.get('date', 'Unknown')} | Điểm: {h.get('score', 0)}")
+        if user and 'history' in user and user['history']:
+            # Create a nice table
+            import pandas as pd
+            df = pd.DataFrame(user['history'])
+            # Sort by date desc
+            df = df.iloc[::-1]
+            
+            # Format columns
+            st.dataframe(
+                df,
+                column_config={
+                    "date": "Thời gian",
+                    "score": "Điểm số ⭐️"
+                },
+                hide_index=True,
+                use_container_width=True
+            )
         else:
             st.info("Chưa có lịch sử đấu.")
     else:

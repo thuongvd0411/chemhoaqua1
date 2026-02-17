@@ -45,6 +45,18 @@ class DataManager:
     def add_stars(self, username, amount):
         if username in self.users:
             self.users[username]["stars"] += amount
+            
+            # Add to history
+            import time
+            timestamp = time.strftime("%Y-%m-%d %H:%M")
+            if "history" not in self.users[username]:
+                self.users[username]["history"] = []
+            
+            self.users[username]["history"].append({
+                "date": timestamp,
+                "score": amount
+            })
+            
             self.save_data()
             return True
         return False
