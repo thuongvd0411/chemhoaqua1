@@ -143,6 +143,7 @@ class GameVideoProcessor(VideoProcessorBase):
         self.saved_game_over = False
         
         # Video Recording
+        self.frame_buffer = deque(maxlen=900) # 30fps * 30s buffer (Keep last 30s of gameplay)
         self.is_recording = True
         self.video_saved = False
         self.save_error = None
