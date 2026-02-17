@@ -538,6 +538,16 @@ if 'user' not in st.session_state:
     st.session_state['user'] = None
 
 # --- Helpers ---
+def safe_rerun():
+    """Rerun the app in a cross-version compatible way"""
+    if hasattr(st, "rerun"):
+        st.rerun()
+    elif hasattr(st, "experimental_rerun"):
+        st.experimental_rerun()
+    else:
+        # Fallback for very old versions? unlikely needed
+        pass
+
 def save_score_callback(score):
     """Callback to save score from processor"""
     user = st.session_state.get('user')
@@ -578,7 +588,7 @@ if st.session_state['user']:
          
     if st.sidebar.button("Đăng xuất"):
         st.session_state['user'] = None
-        st.rerun()
+        safe_rerun()
 else:
     tab1, tab2 = st.sidebar.tabs(["Đăng Nhập", "Đăng Ký"])
     
@@ -589,7 +599,7 @@ else:
             if user:
                 st.session_state['user'] = user
                 st.session_state['username'] = login_user
-                st.rerun()
+                safe_rerun()
             else:
                 st.error("Không tìm thấy người dùng!")
                 
