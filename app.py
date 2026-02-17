@@ -469,16 +469,19 @@ class GameVideoProcessor(VideoProcessorBase):
             image = self.renderer.draw_text(image, f"MẠNG: {self.game.lives}", 10, 50, 30, (0, 0, 255), outline_color=(0,0,0), outline_width=2)
             
             if hasattr(self.game, 'combo_text_timer') and self.game.combo_text_timer > 0 and self.game.combo_count >= 3:
-                 # Combo Text
-                 txt = f"{self.game.combo_count} FRUIT COMBO!"
-                 # Shake or scale based on timer?
-                 scale = 1.0 + (self.game.combo_count * 0.1)
+                 # Combo Text - Moved to Left Side, Smaller
+                 txt = f"{self.game.combo_count} COMBO!"
                  color = (0, 165, 255) # Orange
-                 image = self.renderer.draw_text(image, txt, GAME_WIDTH//2 - 250, 150, 40, color, outline_color=(0,0,0), outline_width=3)
-                 image = self.renderer.draw_text(image, f"+{self.game.combo_count}", GAME_WIDTH//2 - 50, 200, 60, (0, 255, 255), outline_color=(0,0,0), outline_width=3)
+                 # x=10, y=90 (below Lives)
+                 image = self.renderer.draw_text(image, txt, 10, 90, 30, color, outline_color=(0,0,0), outline_width=2)
+                 
+                 # Optional: Show +Score multiplier small next to it
+                 # image = self.renderer.draw_text(image, f"+{self.game.combo_count}", 200, 90, 30, (0, 255, 255), outline_color=(0,0,0), outline_width=2)
 
             if hasattr(self.game, 'frenzy_mode') and self.game.frenzy_mode:
-                image = self.renderer.draw_text(image, "CHIÊU THỨC LIÊN HOÀN!", GAME_WIDTH//2 - 200, 80, 45, (0, 255, 255), outline_color=(0,0,255), outline_width=3)
+                # Frenzy Text - Moved to Right Side or Top Center but smaller
+                # Let's put it top center but smaller: size 25
+                image = self.renderer.draw_text(image, "CHIÊU THỨC LIÊN HOÀN!", GAME_WIDTH//2 - 120, 30, 25, (0, 255, 255), outline_color=(0,0,255), outline_width=2)
 
             if self.display_name:
                  image = self.renderer.draw_text(image, f"{self.display_name}", GAME_WIDTH - 200, 10, 20, (255, 255, 255), outline_color=(0,0,0), outline_width=1)
