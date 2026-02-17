@@ -142,10 +142,11 @@ class GameVideoProcessor(VideoProcessorBase):
         self.saved_game_over = False
         
         # Video Recording
-        self.frame_buffer = deque(maxlen=900) # 30fps * 30s buffer (Keep last 30s of gameplay)
         self.is_recording = True
         self.video_saved = False
         self.save_error = None
+        self.exit_requested = False
+        self.latest_video_path = None
 
     def save_video(self):
         if not self.frame_buffer: return
@@ -173,6 +174,7 @@ class GameVideoProcessor(VideoProcessorBase):
             out.release()
             self.video_saved = True
             self.save_error = None
+            self.latest_video_path = filename
             print(f"Video saved to {filename}")
         except Exception as e:
             print(f"Warning: Could not save video: {e}")
@@ -378,15 +380,14 @@ class GameVideoProcessor(VideoProcessorBase):
                      self.game.reset()
                      self.saved_game_over = False
                      self.video_saved = False
+                     self.save_error = None
+                     self.latest_video_path = None
                      self.frame_buffer.clear()
-                 elif action == "SAVE" and not self.video_saved:
-                     self.save_video()
+                 elif action == "SAVE":
+                     if not self.video_saved:
+                         self.save_video()
                  elif action == "EXIT":
-                     # Soft Reset
-                     self.game.reset()
-                     self.saved_game_over = False
-                     self.video_saved = False
-                     self.frame_buffer.clear()
+                     self.exit_requested = True
 
             # Audio Events Sync (REMOVED)
             with _shared_state.lock:
@@ -678,6 +679,64 @@ if choice == "Chơi Game":
             video_processor_factory=GameVideoProcessor,
             async_processing=True,
         )
+
+        # Polling for Exit/Video events from Processor
+        if ctx.state.playing:
+            status_area = st.empty()
+            while ctx.state.playing:
+                if ctx.video_processor:
+                    if ctx.video_processor.exit_requested:
+                        status_area.warning("Đang thoát game...")
+                        time.sleep(1) # Visual feedback
+                        # Do not rely on session_state being thread-safe here, 
+                        # but since we are in main thread loop, it is safe.
+                        # How to return to menu?
+                        # Streamlit reruns on interaction. We force rerun?
+                        # We can't change 'mode' radio easily without session state hack.
+                        # Assuming Main Menu is default state or we use session state.
+                        # But wait, this loop blocks the script?
+                        # Yes, but Streamlit script needs to finish to render?
+                        # No, webrtc is async. The script finishes.
+                        # If we loop HERE, the script NEVER finishes (until break). 
+                        # This is fine for a game loop if we want to update UI from python.
+                        # BUT Streamlit UI won't update unless we use st.empty().
+                        pass
+                        
+                        # HANDLE EXIT
+                        # Set a flag in session state to show menu on next run
+                        # But we are inside the run.
+                        # We need to break loop and rerun.
+                        st.session_state['force_exit'] = True
+                        break
+                    
+                    if ctx.video_processor.latest_video_path:
+                        st.session_state['last_video'] = ctx.video_processor.latest_video_path
+                        # Clear it in processor so we don't re-trigger
+                        ctx.video_processor.latest_video_path = None
+                        status_area.success(f"Video đã lưu! Đang tải lại...")
+                        time.sleep(1)
+                        st.rerun()
+                
+                time.sleep(0.5)
+
+        # Handle Exit Flag
+        if st.session_state.get('force_exit'):
+            del st.session_state['force_exit']
+            st.rerun() # This should reset the app state if not controlled by other session vars
+            
+        # Handle Video Playback
+        if st.session_state.get('last_video'):
+            st.divider()
+            st.subheader("Xem lại Video vừa chơi")
+            video_path = st.session_state['last_video']
+            if os.path.exists(video_path):
+                st.video(video_path)
+            else:
+                st.error("Không tìm thấy file video.")
+            
+            if st.button("Đóng Video"):
+                del st.session_state['last_video']
+                st.rerun()
 
         if ctx.video_processor:
             # Pass User Context to Processor

@@ -108,7 +108,8 @@ class FruitGame(BaseGame):
         self.halves = [] # New: Track split fruit parts
         self.last_spawn = time.time()
         self.spawn_interval = 1.5
-        self.fruit_types = ['apple', 'orange', 'mango', 'watermelon', 'bomb', 'spike', 'first_aid']
+        self.spawn_interval = 1.5
+        self.fruit_types = ['apple', 'orange', 'mango', 'banana', 'cherry', 'watermelon', 'bomb', 'spike', 'first_aid']
         
         # Bomb Effects
         self.shake_timer = 0

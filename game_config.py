@@ -28,6 +28,8 @@ ASSET_LABELS = {
     'apple': 'Táo (Apple)',
     'orange': 'Cam (Orange)',
     'mango': 'Xoài (Mango)',
+    'banana': 'Chuối (Banana)',
+    'cherry': 'Cherry',
     'bomb': 'Bom (Bomb)',
     'watermelon': 'Dưa hấu (Watermelon)',
     # Fallbacks/Mappings for missing assets
@@ -41,6 +43,8 @@ PARTICLE_COLORS = {
     'apple': (0, 0, 255),       # Red
     'orange': (0, 165, 255),    # Orange
     'mango': (0, 255, 255),     # Yellow
+    'banana': (0, 255, 255),    # Yellow
+    'cherry': (0, 0, 139),      # Dark Red
     'watermelon': (0, 0, 200),  # Red-ish
     'bomb': (50, 50, 50),       # Dark Grey
     'default': (200, 200, 200)  # White/Grey
