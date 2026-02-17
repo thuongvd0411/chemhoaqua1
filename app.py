@@ -144,6 +144,7 @@ class GameVideoProcessor(VideoProcessorBase):
         self.frame_buffer = deque(maxlen=900) # 30fps * 30s buffer (Keep last 30s of gameplay)
         self.is_recording = True
         self.video_saved = False
+        self.save_error = None
 
     def save_video(self):
         if not self.frame_buffer: return
@@ -170,10 +171,12 @@ class GameVideoProcessor(VideoProcessorBase):
                 
             out.release()
             self.video_saved = True
+            self.save_error = None
             print(f"Video saved to {filename}")
         except Exception as e:
             print(f"Warning: Could not save video: {e}")
-            self.video_saved = True # Pretend we saved to stop retrying
+            self.save_error = str(e)
+            self.video_saved = False
 
     def load_assets(self):
         for k in ASSET_LABELS.keys():
@@ -489,10 +492,16 @@ class GameVideoProcessor(VideoProcessorBase):
                     start_x = (GAME_WIDTH - (btn_w * 3 + gap * 2)) // 2
                     y_center = GAME_HEIGHT // 2 + 80
                     
-                    # Draw Buttons: [CHƠI LẠI] [LƯU KQ] [THOÁT]
+                    # Draw Buttons: [CHƠI LẠI] [LƯU VIDEO] [THOÁT]
                     image = self.renderer.draw_button(image, "CHƠI LẠI", start_x + btn_w//2, y_center, btn_w, btn_h)
                     
-                    save_txt = "ĐÃ LƯU" if self.video_saved else "LƯU KQ"
+                    if hasattr(self, 'save_error') and self.save_error:
+                        save_txt = "LỖI LƯU"
+                        save_color = (0, 0, 255) # Red for error
+                    else:
+                        save_txt = "ĐÃ LƯU" if self.video_saved else "LƯU VIDEO"
+                        save_color = None # Default
+                        
                     image = self.renderer.draw_button(image, save_txt, start_x + btn_w + gap + btn_w//2, y_center, btn_w, btn_h)
                     
                     image = self.renderer.draw_button(image, "THOÁT", start_x + 2*(btn_w + gap) + btn_w//2, y_center, btn_w, btn_h)
