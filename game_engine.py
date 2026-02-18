@@ -431,6 +431,7 @@ class FruitGame(BaseGame):
             self.combo_timer = 0.8 # Reset timer
             if self.combo_count >= 3:
                 self.combo_text_timer = 1.0 # Show text for 1s
+                self.events.append("combo") # High value event
             
             # Juice particles
             color = PARTICLE_COLORS.get(fruit['type'], PARTICLE_COLORS['default'])
