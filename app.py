@@ -625,11 +625,8 @@ class AudioProcessor(AudioProcessorBase):
         # Debug: print(inp.shape)
         
         n_channels, n_samples = inp.shape
-        # Create output buffer (copy of input or silence if we want to mute mic)
-        # Let's mute mic to avoid feedback? Or keep it?
-        # User might want to shout?
-        # Let's keep it but maybe lower volume?
-        out_buf = inp.astype(np.float32) / 32768.0 # Convert to float for mixing
+        # Create output buffer (silence) to mute mic
+        out_buf = np.zeros((n_channels, n_samples), dtype=np.float32)
         
         # Mix active sounds
         # We assume sounds are Mono. We mix into Left and Right.
