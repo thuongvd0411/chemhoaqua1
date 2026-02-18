@@ -3,6 +3,7 @@ from streamlit_webrtc import webrtc_streamer, VideoTransformerBase, RTCConfigura
 import cv2
 import mediapipe as mp
 import av
+from aiortc.mediastreams import MediaStreamTrack
 import time
 import os
 import numpy as np
@@ -574,13 +575,19 @@ class GameVideoProcessor(VideoProcessorBase):
             except:
                 return frame
 
-# --- Audio Processor ---
-class AudioProcessor(AudioProcessorBase):
+# --- Audio Source Track ---
+class GameAudioTrack(MediaStreamTrack):
+    kind = "audio"
+
     def __init__(self):
+        super().__init__()
         self.sounds = {}
         self.active_sounds = [] # List of [sound_array, cursor_index]
-        self.sample_rate = 44100 # Standard
+        self.sample_rate = 44100 
         self.load_sounds()
+        self.start_time = time.time()
+        self.frame_duration = 0.02 # 20ms frames
+        self.samples_per_frame = int(self.sample_rate * self.frame_duration)
         
     def load_sounds(self):
         import wave
@@ -589,65 +596,46 @@ class AudioProcessor(AudioProcessorBase):
             if os.path.exists(path):
                 try:
                     with wave.open(path, 'rb') as wf:
-                        self.sample_rate = wf.getframerate() # Assume all same
+                        self.sample_rate = wf.getframerate()
                         frames = wf.readframes(wf.getnframes())
-                        # Convert to numpy float -1..1
-                        # standard wave is 16-bit int
                         audio_data = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
                         self.sounds[name] = audio_data
                 except Exception as e:
                      print(f"Error loading {name}: {e}")
 
-    def recv(self, frame: av.AudioFrame) -> av.AudioFrame:
+    async def recv(self):
         # 1. Get Events
         with _shared_state.lock:
              if _shared_state.game and hasattr(_shared_state.game, 'events'):
                  for event in _shared_state.game.events:
-                     # Map events to sounds
                      sound_name = None
                      if "hit_bomb" in event: sound_name = "bomb"
                      elif "hit_fruit" in event: sound_name = "slice"
                      elif "combo" in event: sound_name = "combo"
                      
                      if sound_name and sound_name in self.sounds:
-                         # Start playing sound (add to active list)
-                         # [array, cursor]
                          self.active_sounds.append([self.sounds[sound_name], 0])
                  
-                 # Clear events after consumption 
-                 # (If VideoProcessor reads them too, we have a race condition. 
-                 # But VideoProcessor DOES NOT read events anymore in my last check, it uses state.)
                  _shared_state.game.events.clear()
 
-        # 2. Mix Audio
-        inp = frame.to_ndarray() # Shape (2, samples) or (samples, 2)? 
-        # Usually (channels, samples) for 'fltp' or 's16p'
-        # Debug: print(inp.shape)
-        
-        n_channels, n_samples = inp.shape
-        # Create output buffer (silence) to mute mic
-        out_buf = np.zeros((n_channels, n_samples), dtype=np.float32)
+        # 2. Generate Audio Frame (Silence + Mix)
+        # Create silence buffer
+        # Stereo output (2 channels)
+        n_samples = self.samples_per_frame
+        out_buf = np.zeros((2, n_samples), dtype=np.float32)
         
         # Mix active sounds
-        # We assume sounds are Mono. We mix into Left and Right.
-        
         remaining_sounds = []
         for sound, cursor in self.active_sounds:
             needed = n_samples
             available = len(sound) - cursor
-            
             pasted = min(needed, available)
             
-            # Mix additively
             chunk = sound[cursor : cursor+pasted]
             
-            # Broadcast to channels if output is stereo
-            if n_channels == 2:
-                # Add to both L and R
-                out_buf[0, :pasted] += chunk * 0.5 # Scale down to avoid clip
-                out_buf[1, :pasted] += chunk * 0.5
-            else:
-                out_buf[0, :pasted] += chunk
+            # Add to both L and R
+            out_buf[0, :pasted] += chunk * 0.5 
+            out_buf[1, :pasted] += chunk * 0.5
                 
             new_cursor = cursor + pasted
             if new_cursor < len(sound):
@@ -655,13 +643,29 @@ class AudioProcessor(AudioProcessorBase):
                 
         self.active_sounds = remaining_sounds
         
-        # Clip and convert back to int16
+        # Convert to int16
         out_buf = np.clip(out_buf, -1.0, 1.0)
         out_int16 = (out_buf * 32767).astype(np.int16)
         
-        new_frame = av.AudioFrame.from_ndarray(out_int16, layout=frame.layout.name)
-        new_frame.sample_rate = frame.sample_rate
-        return new_frame
+        # Construct AudioFrame
+        # Layout: stereo (2 channels), planar? No, usually packed for int16 in av?
+        # av.AudioFrame.from_ndarray expects (channels, samples) for planar formats usually
+        # For 's16', it expects (samples, channels) maybe?
+        # Let's use 'fltp' (float planar) -> (channels, samples)
+        # Or 's16p' -> (channels, samples)
+        
+        # Wait, previous processor used raw input layout.
+        # Let's enforce specific format 's16p' (signed 16-bit planar) which is (channels, samples)
+        
+        frame = av.AudioFrame.from_ndarray(out_int16, format='s16p', layout='stereo')
+        frame.sample_rate = self.sample_rate
+        
+        # Timestamp
+        pts = int((time.time() - self.start_time) * self.sample_rate)
+        frame.pts = pts
+        frame.time_base = av.Rational(1, self.sample_rate)
+        
+        return frame
 
 # --- Streamlit Main App ---
 st.set_page_config(page_title="Be & An Game V4", layout="wide")
@@ -879,13 +883,17 @@ if choice == "Chơi Game":
         # PLAN A (Refined): Real-time Audio Mixer.
         # I will inject a simplified AudioMixer into the response.
         
+        # Audio Source
+        if 'audio_track' not in st.session_state:
+            st.session_state['audio_track'] = GameAudioTrack()
+        
         ctx = webrtc_streamer(
             key="game_stream",
             mode=WebRtcMode.SENDRECV,
             rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
-            media_stream_constraints={"video": {"width": 640, "height": 480}, "audio": True},
+            media_stream_constraints={"video": {"width": 640, "height": 480}, "audio": False}, # Disable Mic
             video_processor_factory=GameVideoProcessor,
-            audio_processor_factory=AudioProcessor, # We need to verify this signature
+            source_audio_track=st.session_state['audio_track'], # Send Game Audio
             async_processing=True,
         )
 
